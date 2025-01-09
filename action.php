@@ -293,7 +293,7 @@ class action_plugin_linksuggest extends DokuWiki_Action_Plugin {
         ];
         // either start with $id or contain $id (AND NOT START).
         // if you want to do a fuzzy match (both start or contains), call the function twice.
-        $regex = $strictsearch ? '^.*\/' . $id; : '^.*\/\w+' . $id;
+        $regex = $strictsearch ? '^.*\/' . $id : '^.*\/\w+' . $id;
         if ($id) {
             $opts['filematch'] = $regex;
         }
