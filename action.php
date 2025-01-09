@@ -1,7 +1,6 @@
 <?php
 
 use dokuwiki\Extension\Event;
-
 /**
  * DokuWiki Plugin linksuggest (Action Component)
  *
@@ -97,10 +96,7 @@ class action_plugin_linksuggest extends DokuWiki_Action_Plugin {
 
             $matchedPages = $this->search_pages($resolved_ns, $entered_page, $has_hash);
         } else if ($entered_ns === false && $current_ns) { // [[xxx while current page not in root-namespace
-            $matchedPages = array_merge(
-                $this->search_pages($current_ns, $entered_page, true),//search in current for pages
-                $this->search_pages('', $entered_page, $has_hash)           //search in root both pgs and ns
-            );
+            $matchedPages = $this->search_pages_upwards($current_ns, $entered_page, true);
         } else {
             $matchedPages = $this->search_pages($entered_ns, $entered_page, $has_hash);
         }
@@ -132,7 +128,6 @@ class action_plugin_linksuggest extends DokuWiki_Action_Plugin {
                 if($current_ns !== '' && !$entry['ns'] && $entry['type'] === 'f') {
                     $trailing = ':';
                 }
-
                 $data_suggestions[] = [
                     'id' => noNS($entry['id']),
                     //return literally ns what user has typed in before page name/namespace name that is suggested
@@ -140,6 +135,7 @@ class action_plugin_linksuggest extends DokuWiki_Action_Plugin {
                     'type' => $entry['type'], // d/f
                     'title' => $entry['title'] ?? '', //namespace have no title, for pages sometimes no title
                     'rootns' => $entry['ns'] ? 0 : 1,
+                    'fullns' => $entry['id'],
                 ];
             }
         }
@@ -277,6 +273,65 @@ class action_plugin_linksuggest extends DokuWiki_Action_Plugin {
         search($data, $conf['datadir'], 'search_universal', $opts, $nsd);
 
         return $data;
+    }
+
+    // does a "fuzzy" search
+    // This could be optimized by doing one search in the upper namespace
+    // and sorting the results afterwards (with closer results first)
+    function search_pages_upwards($ns, $id, $pagesonly) {
+        global $conf;
+
+        $opts = [
+            'depth' => 0,
+            'listfiles' => true,
+            'listdirs' => !$pagesonly,
+            'pagesonly' => true,
+            'firsthead' => true,
+            'sneakyacl' => $conf['sneaky_index'],
+        ];
+        // do "fuzzy" search instead (match-anything/...$id)
+        if ($id) {
+            $opts['filematch'] = '^.*\/\w*' . $id;
+        }
+        if ($id && !$pagesonly) {
+            $opts['dirmatch'] = '^.*\/\w*' . $id;
+        }
+
+        // Initialize the results array
+        $results = [];
+        
+        // Step 1: Search in the current namespace
+        $nsd = utf8_encodeFN(str_replace(':', '/', $ns)); 
+        search($results, $conf['datadir'], 'search_universal', $opts, $nsd);
+        
+        // Step 2: Move up one level to the parent namespace and search again, until you reach the root namespace
+        // Do not search in the global namespace. Always limit to at least one level deep.
+        $namespace = $ns;
+        while ($namespace) {
+            $parentNamespace = substr($namespace, 0, strrpos($namespace, ':'));  // Get the parent namespace
+            $nsd = utf8_encodeFN(str_replace(':', '/', $parentNamespace)); //dir
+            if ($parentNamespace !== '' && $parentNamespace !== $namespace) {
+                $searchResults = [];
+                search($searchResults, $conf['datadir'], 'search_universal', $opts, $nsd);
+                $results = array_merge($results, $searchResults);
+            }
+            $namespace = $parentNamespace;
+        }
+        
+        // Step 3: Remove duplicates by filtering out results from the current namespace in higher namespace searches
+        // Temporary array to store already seen IDs
+        $seen = [];
+
+        // Filter the array for duplicates via the id
+        $filteredResults = array_filter($results, function ($item) use (&$seen) {
+            if (in_array($item['id'], $seen)) {
+                return false;  // If ID is already seen, filter it out
+            } else {
+                $seen[] = $item['id'];  // Add the ID to the seen array
+                return true;  // Keep the first occurrence
+            }
+        });
+        return $filteredResults;
     }
 
     /**

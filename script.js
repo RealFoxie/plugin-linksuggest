@@ -23,6 +23,75 @@ jQuery(function () {
     let $editor = jQuery('#wiki__text');
 
     $editor.textcomplete([
+        { // deep page search - searching with just a word and no prefixed -.:~ 
+            match:    /\[{2}([\w]*)$/,
+            search:   function (term, callback) {
+                if ($editor.data('linksuggest_off') === 1) {
+                    callback([]);
+                    return;
+                }
+                jQuery.post(
+                    DOKU_BASE + 'lib/exe/ajax.php',
+                    {
+                        call: 'plugin_linksuggest',
+                        q:    term,
+                        ns:   JSINFO['namespace'],
+                        id:   JSINFO['id'],
+                    },
+                    function (data) {
+                        data = JSON.parse(data);
+                        callback(jQuery.map(data.data, function (item) {
+                            let id = item.id;
+
+                            if (item.type === 'd') {
+                                id = id + ':';
+                            }
+
+                            return {
+                                id:     id,
+                                ns:     item.ns,
+                                title:  item.title,
+                                type:   item.type,
+                                rootns: item.rootns,
+                                fullns: item.fullns,
+                            };
+                        }));
+                    }
+                );
+            },
+            template: function (item) { //dropdown list
+                let image;
+                let title = item.title ? ' (' + linksuggest_escape(item.title) + ')' : '';
+                let alt = item.type === 'd' ? 'ns' : 'page';
+                let value = item.fullns;
+
+                if (item.type === 'd') { //namespace
+                    image = 'ns.png';
+                } else { //file
+                    image = 'page.png';
+                }
+                return '<img alt="' + alt + '" src="' + DOKU_BASE + 'lib/images/' + image + '"> ' + linksuggest_escape(value) + title;
+            },
+            index:    1,
+            replace:  function (item) { //returns what will be put to editor
+                const path = ':' + item.fullns;
+                if (item.type === 'd') { //namespace
+                    setTimeout(function () {
+                        $editor.trigger('keyup');
+                    }, 200);
+                    return '[[' + path;
+                } else { //file
+                    $editor.data('linksuggest_off', 1);
+
+                    setTimeout(function () {
+                        $editor.data('linksuggest_off', 0);
+                    }, 500);
+                    return ['[[' + path, appendTitle(item.title) + appendClosing()];
+                }
+
+            },
+            cache:  false
+        },
         { //page search
             match:    /\[{2}([\w\-.:~]*)$/,
             search:   function (term, callback) {
