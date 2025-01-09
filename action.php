@@ -96,7 +96,9 @@ class action_plugin_linksuggest extends DokuWiki_Action_Plugin {
 
             $matchedPages = $this->search_pages($resolved_ns, $entered_page, $has_hash);
         } else if ($entered_ns === false && $current_ns) { // [[xxx while current page not in root-namespace
-            $matchedPages = $this->search_pages_upwards($current_ns, $entered_page, true);
+            $matchedPages = array_merge(
+                            $this->search_pages_upwards($current_ns, $entered_page, true, true), 
+                            $this->search_pages_upwards($current_ns, $entered_page, true, false));
         } else {
             $matchedPages = $this->search_pages($entered_ns, $entered_page, $has_hash);
         }
@@ -275,10 +277,10 @@ class action_plugin_linksuggest extends DokuWiki_Action_Plugin {
         return $data;
     }
 
-    // does a "fuzzy" search
+    // $strictsearch = should it start with the $id (instead of just containing it)
     // This could be optimized by doing one search in the upper namespace
     // and sorting the results afterwards (with closer results first)
-    function search_pages_upwards($ns, $id, $pagesonly) {
+    function search_pages_upwards($ns, $id, $pagesonly, $strictsearch = true) {
         global $conf;
 
         $opts = [
@@ -289,12 +291,14 @@ class action_plugin_linksuggest extends DokuWiki_Action_Plugin {
             'firsthead' => true,
             'sneakyacl' => $conf['sneaky_index'],
         ];
-        // do "fuzzy" search instead (match-anything/...$id)
+        // either start with $id or contain $id (AND NOT START).
+        // if you want to do a fuzzy match (both start or contains), call the function twice.
+        $regex = $strictsearch ? '^.*\/' . $id; : '^.*\/\w+' . $id;
         if ($id) {
-            $opts['filematch'] = '^.*\/\w*' . $id;
+            $opts['filematch'] = $regex;
         }
         if ($id && !$pagesonly) {
-            $opts['dirmatch'] = '^.*\/\w*' . $id;
+            $opts['dirmatch'] = $regex;
         }
 
         // Initialize the results array
@@ -319,6 +323,11 @@ class action_plugin_linksuggest extends DokuWiki_Action_Plugin {
         }
         
         // Step 3: Remove duplicates by filtering out results from the current namespace in higher namespace searches
+        $filteredResults = $this->removeDuplicateSearchResults($results);
+        return $filteredResults;
+    }
+
+    function removeDuplicateSearchResults($results) {
         // Temporary array to store already seen IDs
         $seen = [];
 
