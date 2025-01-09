@@ -19,6 +19,37 @@ function appendClosing() {
     return (charAfterCursor() === ']' || charAfterCursor() === '|')? '' : ']]';
 }
 
+function jQueryNamespaceSearch(callback, callName, term) {
+    jQuery.post(
+        DOKU_BASE + 'lib/exe/ajax.php',
+        {
+            call: callName,
+            q:    term,
+            ns:   JSINFO['namespace'],
+            id:   JSINFO['id'],
+        },
+        function (data) {
+            data = JSON.parse(data);
+            callback(jQuery.map(data.data, function (item) {
+                let id = item.id;
+
+                if (item.type === 'd') {
+                    id = id + ':';
+                }
+
+                return {
+                    id:     id,
+                    ns:     item.ns,
+                    title:  item.title,
+                    type:   item.type,
+                    rootns: item.rootns,
+                    fullns: item.fullns,
+                };
+            }));
+        }
+    );
+}
+
 jQuery(function () {
     let $editor = jQuery('#wiki__text');
 
@@ -30,34 +61,7 @@ jQuery(function () {
                     callback([]);
                     return;
                 }
-                jQuery.post(
-                    DOKU_BASE + 'lib/exe/ajax.php',
-                    {
-                        call: 'plugin_linksuggest',
-                        q:    term,
-                        ns:   JSINFO['namespace'],
-                        id:   JSINFO['id'],
-                    },
-                    function (data) {
-                        data = JSON.parse(data);
-                        callback(jQuery.map(data.data, function (item) {
-                            let id = item.id;
-
-                            if (item.type === 'd') {
-                                id = id + ':';
-                            }
-
-                            return {
-                                id:     id,
-                                ns:     item.ns,
-                                title:  item.title,
-                                type:   item.type,
-                                rootns: item.rootns,
-                                fullns: item.fullns,
-                            };
-                        }));
-                    }
-                );
+                jQueryNamespaceSearch(callback, 'plugin_linksuggest', term);
             },
             template: function (item) { //dropdown list
                 let image;
@@ -92,8 +96,9 @@ jQuery(function () {
             },
             cache:  false
         },
-        { //page search
-            match:    /\[{2}([\w\-.:~]*)$/,
+        { //Deep Page Section (#) Search
+            match:    /\[{2}(\#[\w]*)$/,
+            index:    1,
             search:   function (term, callback) {
                 if ($editor.data('linksuggest_off') === 1) {
                     callback([]);
@@ -110,22 +115,39 @@ jQuery(function () {
                     function (data) {
                         data = JSON.parse(data);
                         callback(jQuery.map(data.data, function (item) {
-                            let id = item.id;
-
-                            if (item.type === 'd') {
-                                id = id + ':';
-                            }
-
                             return {
-                                id:     id,
-                                ns:     item.ns,
-                                title:  item.title,
-                                type:   item.type,
-                                rootns: item.rootns
+                                'title': item.title,
+                                'fullns': item.fullns,
+                                'heading': item.heading
                             };
                         }));
                     }
                 );
+            },
+            template: function (item) { //dropdown list
+                let title = item.title ? ' (' + linksuggest_escape(item.title) + ')' : '';
+                return linksuggest_escape(item.fullns) + title;
+            },
+
+            replace: function (item) { //returns what will be put to editor
+                const path = ':' + item.fullns;
+                $editor.data('linksuggest_off', 1);
+                setTimeout(function () {
+                    $editor.data('linksuggest_off', 0);
+                }, 500);
+
+                return '[[' + path + '#' + item.heading + appendSubtitle(item.title) + appendClosing();
+            },
+            cache:   false
+        },
+        { //page search
+            match:    /\[{2}([\w\-.:~]*)$/,
+            search:   function (term, callback) {
+                if ($editor.data('linksuggest_off') === 1) {
+                    callback([]);
+                    return;
+                }
+                jQueryNamespaceSearch(callback, 'plugin_linksuggest', term);
             },
             template: function (item) { //dropdown list
                 let image;
@@ -219,32 +241,7 @@ jQuery(function () {
                     return;
 
                 }
-                jQuery.post(
-                    DOKU_BASE + 'lib/exe/ajax.php',
-                    {
-                        call: 'plugin_imglinksuggest',
-                        q:    term,
-                        ns:   JSINFO['namespace'],
-                        id:   JSINFO['id'],
-                    },
-                    function (data) {
-                        data = JSON.parse(data);
-                        callback(jQuery.map(data.data, function (item) {
-                            let id = item.id;
-
-                            if (item.type === 'd') {
-                                id = id + ':';
-                            }
-
-                            return {
-                                id:     id,
-                                ns:     item.ns,
-                                type:   item.type,
-                                rootns: item.rootns
-                            };
-                        }));
-                    }
-                );
+                jQueryNamespaceSearch(callback, 'plugin_imglinksuggest', term);
             },
             template: function (item) { //dropdown list
                 let image;

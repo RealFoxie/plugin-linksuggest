@@ -47,7 +47,7 @@ class action_plugin_linksuggest extends DokuWiki_Action_Plugin {
         $current_pageid = trim($INPUT->post->str('id')); //current id
         $current_ns = getNS($current_pageid);
         $q = trim($INPUT->post->str('q')); //entered string
-
+        $originalQ = $INPUT->post->str('q');
         //keep hashlink if exists
         list($q, $hash) = array_pad(explode('#', $q, 2), 2, null);
 
@@ -69,10 +69,13 @@ class action_plugin_linksuggest extends DokuWiki_Action_Plugin {
         }
 
         $entered_page = cleanID(noNS($q)); //page part of entered string
-
+        
         if ($entered_ns === '') { // [[:xxx -> absolute link
             $matchedPages = $this->search_pages('', $entered_page, $has_hash);
-        } else if (strpos($q, '.') !== false //relative link (., .:, .., ..:, .ns: etc, and :..:, :.: )
+        } else if(substr($originalQ, 0, 1) === '#') { // [[#word search, global heading search
+            $matchedPages = $this->search_pages_upwards($current_ns, '', true, true);
+        }
+        else if (strpos($q, '.') !== false //relative link (., .:, .., ..:, .ns: etc, and :..:, :.: )
             || substr($entered_ns, 0, 1) == '~') { // ~, ~:,
             //resolve the ns based on current id
             $ns = $entered_ns;
@@ -105,8 +108,31 @@ class action_plugin_linksuggest extends DokuWiki_Action_Plugin {
 
         $data_suggestions = [];
         $link = '';
+        if (substr($originalQ, 0, 1) === '#') {
+            // need to look at the TOC of every page...
+            foreach ($matchedPages as $matchedPage) {
+                $page = $matchedPage['id'];
+                $meta = p_get_metadata($page, false, METADATA_RENDER_USING_CACHE);
 
-        if ($hash !== null && $matchedPages[0]['type'] === 'f') {
+                if (isset($meta['internal']['toc']) && isset($meta['description']['tableofcontents'])) {
+                    $toc = $meta['description']['tableofcontents'];
+                    Event::createAndTrigger('TPL_TOC_RENDER', $toc, null, false);
+                    if (is_array($toc) && count($toc) !== 0) {
+                        foreach ($toc as $t) { //loop through toc and compare
+                            if ($hash === '' || stripos($t['hid'], $hash) !== false) {
+                                $data_suggestions[] = [
+                                    'title' => $t['title'],
+                                    'fullns' => $page,
+                                    'heading' => $t['hid'],
+                                ];
+                            }
+                        }
+                        $link = $q;
+                    }
+                }
+            }
+        }
+        else if ($hash !== null && $matchedPages[0]['type'] === 'f') {
             //if hash is given and a page was found
             $page = $matchedPages[0]['id'];
             $meta = p_get_metadata($page, false, METADATA_RENDER_USING_CACHE);
@@ -123,8 +149,8 @@ class action_plugin_linksuggest extends DokuWiki_Action_Plugin {
                     $link = $q;
                 }
             }
-        } else {
-
+        } 
+        else {
             foreach ($matchedPages as $entry) {
                 //a page in rootns
                 if($current_ns !== '' && !$entry['ns'] && $entry['type'] === 'f') {
