@@ -19,6 +19,10 @@ function appendClosing() {
     return (charAfterCursor() === ']' || charAfterCursor() === '|')? '' : ']]';
 }
 
+function extraNs(fullNs, existingNs) {
+    return fullNs.startsWith(existingNs) ? fullNs.slice(existingNs.length) : fullNs;
+}
+
 function jQueryNamespaceSearch(callback, callName, term) {
     jQuery.post(
         DOKU_BASE + 'lib/exe/ajax.php',
@@ -153,36 +157,28 @@ jQuery(function () {
                 let image;
                 let title = item.title ? ' (' + linksuggest_escape(item.title) + ')' : '';
                 let alt = item.type === 'd' ? 'ns' : 'page';
-                let value = item.id;
-
-                if (item.rootns) { //page is in root namespace
-                    value = ':' + value;
-                }
+                const addedns = extraNs(item.fullns, item.ns);
                 if (item.type === 'd') { //namespace
                     image = 'ns.png';
                 } else { //file
                     image = 'page.png';
                 }
-                return '<img alt="' + alt + '" src="' + DOKU_BASE + 'lib/images/' + image + '"> ' + linksuggest_escape(value) + title;
+                return '<img alt="' + alt + '" src="' + DOKU_BASE + 'lib/images/' + image + '"> ' + linksuggest_escape(addedns) + title;
             },
             index:    1,
             replace:  function (item) { //returns what will be put to editor
-                let id = item.id;
-                if (item.ns) { //prefix with already entered ns
-                    id = item.ns  + id;
-                }
                 if (item.type === 'd') { //namespace
                     setTimeout(function () {
                         $editor.trigger('keyup');
                     }, 200);
-                    return '[[' + id;
+                    return '[[' + ':' + item.fullns + ':';
                 } else { //file
                     $editor.data('linksuggest_off', 1);
 
                     setTimeout(function () {
                         $editor.data('linksuggest_off', 0);
                     }, 500);
-                    return ['[[' + id, appendTitle(item.title) + appendClosing()];
+                    return ['[[' + ':' + item.fullns, appendTitle(item.title) + appendClosing()];
                 }
 
             },

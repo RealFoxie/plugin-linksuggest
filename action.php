@@ -285,20 +285,29 @@ class action_plugin_linksuggest extends DokuWiki_Action_Plugin {
         $nsd = utf8_encodeFN(str_replace(':', '/', $ns)); //dir
 
         $opts = [
-            'depth' => 1,
+            'depth' => 10,
             'listfiles' => true,
             'listdirs' => !$pagesonly,
             'pagesonly' => true,
             'firsthead' => true,
             'sneakyacl' => $conf['sneaky_index'],
         ];
+        // . '[^\/]*$' => makes sure it only matches if the actual namespace has a match
         if ($id) {
-            $opts['filematch'] = '^.*\/' . $id;
+            $opts['filematch'] = '^.*\/' . $id . '[^\/]*$' ;
         }
         if ($id && !$pagesonly) {
-            $opts['dirmatch'] = '^.*\/' . $id;
+            $opts['dirmatch'] = '^.*\/' . $id . '[^\/]*$';
         }
         search($data, $conf['datadir'], 'search_universal', $opts, $nsd);
+        
+        // show smaller namespaces first for a more logical order
+        usort($data, function($a, $b) {
+            $colonCountA = substr_count($a['id'], ':');
+            $colonCountB = substr_count($b['id'], ':');
+            // if equal, return original order
+            return $colonCountA - $colonCountB;
+        });
 
         return $data;
     }
