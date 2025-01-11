@@ -203,30 +203,28 @@ jQuery(function () {
                         data = JSON.parse(data);
                         callback(jQuery.map(data.data, function (item) {
                             return {
-                                'link': data.link,
-                                'toc': item
+                                'title': item.title,
+                                'fullns': item.fullns,
+                                'heading': item.heading
                             };
                         }));
                     }
                 );
             },
             template: function (item) { //dropdown list
-                let toc = item.toc;
-                let title = toc.title ? ' (' + linksuggest_escape(toc.title) + ')' : '';
+                let title = item.title ? ' (' + linksuggest_escape(item.title) + ')' : '';
 
-                return linksuggest_escape(toc.hid) + title;
+                return linksuggest_escape(item.fullns) + title;
             },
 
             replace: function (item) { //returns what will be put to editor
-                let link = item.link;
-                let toc = item.toc;
-
+                const path = item.fullns.startsWith(':')? item.fullns : ':' + item.fullns;
                 $editor.data('linksuggest_off', 1);
                 setTimeout(function () {
                     $editor.data('linksuggest_off', 0);
                 }, 500);
 
-                return '[[' + link + '#' + toc.hid + appendSubtitle(toc.title) + appendClosing();
+                return '[[' + path + '#' + item.heading + appendSubtitle(item.title) + appendClosing();
             },
             cache:   false
         }, { //media search

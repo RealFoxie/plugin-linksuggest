@@ -72,10 +72,14 @@ class action_plugin_linksuggest extends DokuWiki_Action_Plugin {
         
         if ($entered_ns === '') { // [[:xxx -> absolute link
             $matchedPages = $this->search_pages('', $entered_page, $has_hash);
-        } else if(substr($originalQ, 0, 1) === '#') { // [[#word search, global heading search
+        } else if(strpos($originalQ, ':#') !== false) { // [[:some:namespaces:#word search, search in headings on same or level below
+            $matchedPages = $this->search_pages($entered_ns, '', true);
+            // also include own page. Hack to make heading search work
+            $matchedPages = array_merge($matchedPages, [['id' => $entered_ns]]);
+        } 
+        else if(substr($originalQ, 0, 1) === '#') { // [[#word search, global heading search
             $matchedPages = $this->search_pages_upwards($current_ns, '', true, true);
-        }
-        else if (strpos($q, '.') !== false //relative link (., .:, .., ..:, .ns: etc, and :..:, :.: )
+        } else if (strpos($q, '.') !== false //relative link (., .:, .., ..:, .ns: etc, and :..:, :.: )
             || substr($entered_ns, 0, 1) == '~') { // ~, ~:,
             //resolve the ns based on current id
             $ns = $entered_ns;
@@ -108,7 +112,7 @@ class action_plugin_linksuggest extends DokuWiki_Action_Plugin {
 
         $data_suggestions = [];
         $link = '';
-        if (substr($originalQ, 0, 1) === '#') {
+        if (substr($originalQ, 0, 1) === '#' || strpos($originalQ, ':#') !== false) {
             // need to look at the TOC of every page...
             foreach ($matchedPages as $matchedPage) {
                 $page = $matchedPage['id'];
@@ -142,8 +146,12 @@ class action_plugin_linksuggest extends DokuWiki_Action_Plugin {
                 Event::createAndTrigger('TPL_TOC_RENDER', $toc, null, false);
                 if (is_array($toc) && count($toc) !== 0) {
                     foreach ($toc as $t) { //loop through toc and compare
-                        if ($hash === '' || strpos($t['hid'], $hash) === 0) {
-                            $data_suggestions[] = $t;
+                        if ($hash === '' || stripos($t['hid'], $hash) !== false) {
+                            $data_suggestions[] = [
+                                'title' => $t['title'],
+                                'fullns' => $page,
+                                'heading' => $t['hid'],
+                            ];
                         }
                     }
                     $link = $q;
