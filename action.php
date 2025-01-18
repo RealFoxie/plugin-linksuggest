@@ -69,9 +69,8 @@ class action_plugin_linksuggest extends DokuWiki_Action_Plugin {
         }
 
         $entered_page = cleanID(noNS($q)); //page part of entered string
-        
         if ($entered_ns === '') { // [[:xxx -> absolute link
-            $matchedPages = $this->search_pages('', $entered_page, $has_hash);
+            $matchedPages = array_merge($this->search_pages('', $entered_page, $has_hash, true),$this->search_pages('', $entered_page, $has_hash, false));
         } else if(strpos($originalQ, ':#') !== false) { // [[:some:namespaces:#word search, search in headings on same or level below
             $matchedPages = $this->search_pages($entered_ns, '', true);
             // also include own page. Hack to make heading search work
@@ -107,7 +106,9 @@ class action_plugin_linksuggest extends DokuWiki_Action_Plugin {
                             $this->search_pages_upwards($current_ns, $entered_page, true, true), 
                             $this->search_pages_upwards($current_ns, $entered_page, true, false));
         } else {
-            $matchedPages = $this->search_pages($entered_ns, $entered_page, $has_hash);
+            $matchedPages = array_merge(
+                            $this->search_pages($entered_ns, $entered_page, $has_hash, true),
+                            $this->search_pages($entered_ns, $entered_page, $has_hash, false));
         }
 
         $data_suggestions = [];
@@ -286,7 +287,7 @@ class action_plugin_linksuggest extends DokuWiki_Action_Plugin {
      * @param bool $pagesonly true: pages only, false: pages and namespaces
      * @return array
      */
-    protected function search_pages($ns, $id, $pagesonly = false) {
+    protected function search_pages($ns, $id, $pagesonly = false, $strictsearch = true) {
         global $conf;
 
         $data = [];
@@ -301,11 +302,12 @@ class action_plugin_linksuggest extends DokuWiki_Action_Plugin {
             'sneakyacl' => $conf['sneaky_index'],
         ];
         // . '[^\/]*$' => makes sure it only matches if the actual namespace has a match
+        $regex = $strictsearch ? '^.*\/' . $id . '[^\/]*$' : '^.*\/\w+' . $id . '[^\/]*$';
         if ($id) {
-            $opts['filematch'] = '^.*\/' . $id . '[^\/]*$' ;
+            $opts['filematch'] = $regex ;
         }
         if ($id && !$pagesonly) {
-            $opts['dirmatch'] = '^.*\/' . $id . '[^\/]*$';
+            $opts['dirmatch'] = $regex ;
         }
         search($data, $conf['datadir'], 'search_universal', $opts, $nsd);
         
