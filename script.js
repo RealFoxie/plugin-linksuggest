@@ -138,7 +138,7 @@ jQuery(function () {
                     setTimeout(function () {
                         $editor.trigger('keyup');
                     }, 200);
-                    return '[[' + item.enteredorigns + appendedNs + ':';
+                    return '{{page>' + item.enteredorigns + appendedNs + ':';
                 } else { //file
                     $editor.data('linksuggest_off', 1);
 
