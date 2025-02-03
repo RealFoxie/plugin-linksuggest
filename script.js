@@ -14,8 +14,8 @@ function appendTitle(title) {
 function appendSubtitle(title) {
     return (title && charAfterCursor() !== '|') ? '|' + title : '';
 }
-function appendClosing() {
-    return (charAfterCursor() === ']' || charAfterCursor() === '|') ? '' : ']]';
+function appendClosing(closingBracket = ']]') {
+    return (charAfterCursor() === closingBracket || charAfterCursor() === '|') ? '' : closingBracket;
 }
 
 function extraNs(fullNs, existingNs) {
@@ -58,8 +58,7 @@ jQuery(function () {
 
     $editor.textcomplete([
         { //page search
-            // todo: should be able to set this in an option somewhere, to allow more special cases
-            match: /(?:\[{2}|\{\{page>)([\w\-.:~\#]*)$/,//  /\[{2}([\w\-.:~\#]*)$/,
+            match: /\[{2}([\w\-.:~\#]*)$/,
             search: function (term, callback) {
                 if ($editor.data('linksuggest_off') === 1) {
                     callback([]);
@@ -106,6 +105,57 @@ jQuery(function () {
             },
             cache: false
         },
+        // TODO MERGE THIS IN THE ABOVE by checking the prefix used...
+        // THis is to allow Include plugin to work
+        { //page search
+            match: /\[{2}([\w\-.:~\#]*)$/,
+            search: function (term, callback) {
+                if ($editor.data('linksuggest_off') === 1) {
+                    callback([]);
+                    return;
+                }
+                jQueryNamespaceSearch(callback, 'plugin_linksuggest', term);
+            },
+            template: function (item) { //dropdown list
+                let image;
+                const title = item.heading || item.title;
+                let titlePart = title ? ' (' + linksuggest_escape(item.title) + ')' : '';
+                let alt = item.type === 'd' ? 'ns' : 'page';
+                const addedns = extraNs(item.fullns, item.enteredfullns);
+                if (item.type === 'd') { //namespace
+                    image = 'ns.png';
+                } else { //file
+                    image = 'page.png';
+                }
+                return '<img alt="' + alt + '" src="' + DOKU_BASE + 'lib/images/' + image + '"> ' + linksuggest_escape(addedns) + titlePart;
+            },
+            index: 1,
+            replace: function (item) { //returns what will be put to editor
+                let appendedNs = extraNs(item.fullns, item.enteredfullns);
+                if (appendedNs !== '') { appendedNs = ':' + appendedNs; }
+
+                if (item.type === 'd') { //namespace
+                    setTimeout(function () {
+                        $editor.trigger('keyup');
+                    }, 200);
+                    return '[[' + item.enteredorigns + appendedNs + ':';
+                } else { //file
+                    $editor.data('linksuggest_off', 1);
+
+                    setTimeout(function () {
+                        $editor.data('linksuggest_off', 0);
+                    }, 500);
+                    if(item.heading) {
+                        return '{{page>' + item.enteredorigns + appendedNs + '#' + item.heading + appendSubtitle(item.title) + appendClosing('}}');
+                    }else {
+                        return ['{{page>' + item.enteredorigns + appendedNs, appendTitle(item.title) + appendClosing('}}')];
+                    }
+                }
+
+            },
+            cache: false
+        },
+
         { //media search
             match: /\{{2}([\w\-.:~]*)$/,
             search: function (term, callback) {
