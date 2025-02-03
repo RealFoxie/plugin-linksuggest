@@ -108,7 +108,7 @@ jQuery(function () {
         // TODO MERGE THIS IN THE ABOVE by checking the prefix used...
         // THis is to allow Include plugin to work
         { //page search
-            match: /\[{2}([\w\-.:~\#]*)$/,
+            match: /\{\{page>([\w\-.:~\#]*)$/,
             search: function (term, callback) {
                 if ($editor.data('linksuggest_off') === 1) {
                     callback([]);
