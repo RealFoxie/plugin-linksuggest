@@ -58,7 +58,8 @@ jQuery(function () {
 
     $editor.textcomplete([
         { //page search
-            match: /\[{2}([\w\-.:~\#]*)$/,
+            // todo: should be able to set this in an option somewhere, to allow more special cases
+            match: /(?:\[{2}|\{\{page>)([\w\-.:~\#]*)$/,//  /\[{2}([\w\-.:~\#]*)$/,
             search: function (term, callback) {
                 if ($editor.data('linksuggest_off') === 1) {
                     callback([]);
