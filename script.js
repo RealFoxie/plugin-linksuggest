@@ -146,9 +146,9 @@ jQuery(function () {
                         $editor.data('linksuggest_off', 0);
                     }, 500);
                     if(item.heading) {
-                        return '{{page>' + item.enteredorigns + appendedNs + '#' + item.heading + appendSubtitle(item.title) + appendClosing('}}');
+                        return '{{page>' + item.enteredorigns + appendedNs + '#' + item.heading + appendClosing('}}');
                     }else {
-                        return ['{{page>' + item.enteredorigns + appendedNs, appendTitle(item.title) + appendClosing('}}')];
+                        return ['{{page>' + item.enteredorigns + appendedNs, appendClosing('}}')];
                     }
                 }
 
