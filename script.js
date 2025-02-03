@@ -27,7 +27,6 @@ function extraNs(fullNs, existingNs) {
 
 
 function jQueryNamespaceSearch(callback, callName, term) {
-    console.log("do search");
     jQuery.post(
         DOKU_BASE + 'lib/exe/ajax.php',
         {
@@ -54,19 +53,6 @@ function jQueryNamespaceSearch(callback, callName, term) {
     );
 }
 
-let timeout;
-function debounce(func, wait) {
-    console.log("debounce called");
-    
-    return function(...args) {
-        clearTimeout(timeout);
-        timeout = setTimeout(() => {
-            console.log("call function");
-            func.apply(this, args);
-        }, wait);
-    };
-}
-
 jQuery(function () {
     let $editor = jQuery('#wiki__text');
 
@@ -78,7 +64,7 @@ jQuery(function () {
                     callback([]);
                     return;
                 }
-                debounce(() => jQueryNamespaceSearch(callback, 'plugin_linksuggest', term), 350)();
+                jQueryNamespaceSearch(callback, 'plugin_linksuggest', term);
             },
             template: function (item) { //dropdown list
                 let image;
@@ -95,7 +81,6 @@ jQuery(function () {
             },
             index: 1,
             replace: function (item) { //returns what will be put to editor
-                clearTimeout(timeout);
                 let appendedNs = extraNs(item.fullns, item.enteredfullns);
                 if (appendedNs !== '') { appendedNs = ':' + appendedNs; }
 
