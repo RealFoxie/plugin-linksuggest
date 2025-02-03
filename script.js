@@ -2,35 +2,39 @@
 function linksuggest_escape(text) {
     return jQuery('<div/>').text(text).html();
 }
-
 function charAfterCursor() {
     let editor = jQuery('#wiki__text');
     let position = editor.prop('selectionStart');
-    return editor.prop('value').substring(position, position+1);
+    return editor.prop('value').substring(position, position + 1);
 }
 
 function appendTitle(title) {
-    return (title && JSINFO["append_header"] === 1 && charAfterCursor() !== '|')? '|' + title : '';
+    return (title && JSINFO["append_header"] === 1 && charAfterCursor() !== '|') ? '|' + title : '';
 }
 function appendSubtitle(title) {
-    return (title && charAfterCursor() !== '|')? '|' + title : '';
+    return (title && charAfterCursor() !== '|') ? '|' + title : '';
 }
 function appendClosing() {
-    return (charAfterCursor() === ']' || charAfterCursor() === '|')? '' : ']]';
+    return (charAfterCursor() === ']' || charAfterCursor() === '|') ? '' : ']]';
 }
 
 function extraNs(fullNs, existingNs) {
-    return fullNs.startsWith(existingNs) ? fullNs.slice(existingNs.length) : fullNs;
+    if(existingNs === '') {return fullNs; }
+    else if (fullNs.startsWith(existingNs)) { return fullNs.slice(existingNs.length + 1) }
+    else if ((':' + fullNs).startsWith(existingNs)) { return fullNs.slice(existingNs.length) }
+    else { return fullNs; }
 }
 
+
 function jQueryNamespaceSearch(callback, callName, term) {
+    console.log("do search");
     jQuery.post(
         DOKU_BASE + 'lib/exe/ajax.php',
         {
             call: callName,
-            q:    term,
-            ns:   JSINFO['namespace'],
-            id:   JSINFO['id'],
+            q: term,
+            ns: JSINFO['namespace'],
+            id: JSINFO['id'],
         },
         function (data) {
             data = JSON.parse(data);
@@ -42,194 +46,83 @@ function jQueryNamespaceSearch(callback, callName, term) {
                 }
 
                 return {
-                    id:     id,
-                    ns:     item.ns,
-                    title:  item.title,
-                    type:   item.type,
-                    rootns: item.rootns,
-                    fullns: item.fullns,
+                    ...item,
+                    id: id,                    
                 };
             }));
         }
     );
 }
 
+let timeout;
+function debounce(func, wait) {
+    console.log("debounce called");
+    
+    return function(...args) {
+        clearTimeout(timeout);
+        timeout = setTimeout(() => {
+            console.log("call function");
+            func.apply(this, args);
+        }, wait);
+    };
+}
+
 jQuery(function () {
     let $editor = jQuery('#wiki__text');
 
     $editor.textcomplete([
-        { // deep page search - searching with just a word and no prefixed -.:~ 
-            match:    /\[{2}([\w]*)$/,
-            search:   function (term, callback) {
-                if ($editor.data('linksuggest_off') === 1) {
-                    callback([]);
-                    return;
-                }
-                jQueryNamespaceSearch(callback, 'plugin_linksuggest', term);
-            },
-            template: function (item) { //dropdown list
-                let image;
-                let title = item.title ? ' (' + linksuggest_escape(item.title) + ')' : '';
-                let alt = item.type === 'd' ? 'ns' : 'page';
-                let value = item.fullns;
-
-                if (item.type === 'd') { //namespace
-                    image = 'ns.png';
-                } else { //file
-                    image = 'page.png';
-                }
-                return '<img alt="' + alt + '" src="' + DOKU_BASE + 'lib/images/' + image + '"> ' + linksuggest_escape(value) + title;
-            },
-            index:    1,
-            replace:  function (item) { //returns what will be put to editor
-                const path = ':' + item.fullns;
-                if (item.type === 'd') { //namespace
-                    setTimeout(function () {
-                        $editor.trigger('keyup');
-                    }, 200);
-                    return '[[' + path;
-                } else { //file
-                    $editor.data('linksuggest_off', 1);
-
-                    setTimeout(function () {
-                        $editor.data('linksuggest_off', 0);
-                    }, 500);
-                    return ['[[' + path, appendTitle(item.title) + appendClosing()];
-                }
-
-            },
-            cache:  false
-        },
-        { //Deep Page Section (#) Search
-            match:    /\[{2}(\#[\w]*)$/,
-            index:    1,
-            search:   function (term, callback) {
-                if ($editor.data('linksuggest_off') === 1) {
-                    callback([]);
-                    return;
-                }
-                jQuery.post(
-                    DOKU_BASE + 'lib/exe/ajax.php',
-                    {
-                        call: 'plugin_linksuggest',
-                        q:    term,
-                        ns:   JSINFO['namespace'],
-                        id:   JSINFO['id'],
-                    },
-                    function (data) {
-                        data = JSON.parse(data);
-                        callback(jQuery.map(data.data, function (item) {
-                            return {
-                                'title': item.title,
-                                'fullns': item.fullns,
-                                'heading': item.heading
-                            };
-                        }));
-                    }
-                );
-            },
-            template: function (item) { //dropdown list
-                let title = item.title ? ' (' + linksuggest_escape(item.title) + ')' : '';
-                return linksuggest_escape(item.fullns) + title;
-            },
-
-            replace: function (item) { //returns what will be put to editor
-                const path = ':' + item.fullns;
-                $editor.data('linksuggest_off', 1);
-                setTimeout(function () {
-                    $editor.data('linksuggest_off', 0);
-                }, 500);
-
-                return '[[' + path + '#' + item.heading + appendSubtitle(item.title) + appendClosing();
-            },
-            cache:   false
-        },
         { //page search
-            match:    /\[{2}([\w\-.:~]*)$/,
-            search:   function (term, callback) {
+            match: /\[{2}([\w\-.:~\#]*)$/,
+            search: function (term, callback) {
                 if ($editor.data('linksuggest_off') === 1) {
                     callback([]);
                     return;
                 }
-                jQueryNamespaceSearch(callback, 'plugin_linksuggest', term);
+                debounce(() => jQueryNamespaceSearch(callback, 'plugin_linksuggest', term), 350)();
             },
             template: function (item) { //dropdown list
                 let image;
-                let title = item.title ? ' (' + linksuggest_escape(item.title) + ')' : '';
+                const title = item.heading || item.title;
+                let titlePart = title ? ' (' + linksuggest_escape(item.title) + ')' : '';
                 let alt = item.type === 'd' ? 'ns' : 'page';
-                const addedns = extraNs(item.fullns, item.ns);
+                const addedns = extraNs(item.fullns, item.enteredfullns);
                 if (item.type === 'd') { //namespace
                     image = 'ns.png';
                 } else { //file
                     image = 'page.png';
                 }
-                return '<img alt="' + alt + '" src="' + DOKU_BASE + 'lib/images/' + image + '"> ' + linksuggest_escape(addedns) + title;
+                return '<img alt="' + alt + '" src="' + DOKU_BASE + 'lib/images/' + image + '"> ' + linksuggest_escape(addedns) + titlePart;
             },
-            index:    1,
-            replace:  function (item) { //returns what will be put to editor
+            index: 1,
+            replace: function (item) { //returns what will be put to editor
+                clearTimeout(timeout);
+                let appendedNs = extraNs(item.fullns, item.enteredfullns);
+                if (appendedNs !== '') { appendedNs = ':' + appendedNs; }
+
                 if (item.type === 'd') { //namespace
                     setTimeout(function () {
                         $editor.trigger('keyup');
                     }, 200);
-                    return '[[' + ':' + item.fullns + ':';
+                    return '[[' + item.enteredorigns + appendedNs + ':';
                 } else { //file
                     $editor.data('linksuggest_off', 1);
 
                     setTimeout(function () {
                         $editor.data('linksuggest_off', 0);
                     }, 500);
-                    return ['[[' + ':' + item.fullns, appendTitle(item.title) + appendClosing()];
-                }
-
-            },
-            cache:  false
-        }, { //Page Section Search
-            match:    /\[\[([\w\-.:~]+#[\w\-.:]*)$/,
-            index:    1,
-            search:   function (term, callback) {
-                if ($editor.data('linksuggest_off') === 1) {
-                    callback([]);
-                    return;
-                }
-                jQuery.post(
-                    DOKU_BASE + 'lib/exe/ajax.php',
-                    {
-                        call: 'plugin_linksuggest',
-                        q:    term,
-                        ns:   JSINFO['namespace'],
-                        id:   JSINFO['id'],
-                    },
-                    function (data) {
-                        data = JSON.parse(data);
-                        callback(jQuery.map(data.data, function (item) {
-                            return {
-                                'title': item.title,
-                                'fullns': item.fullns,
-                                'heading': item.heading
-                            };
-                        }));
+                    if(item.heading) {
+                        return '[[' + item.enteredorigns + appendedNs + '#' + item.heading + appendSubtitle(item.title) + appendClosing();
+                    }else {
+                        return ['[[' + item.enteredorigns + appendedNs, appendTitle(item.title) + appendClosing()];
                     }
-                );
-            },
-            template: function (item) { //dropdown list
-                let title = item.title ? ' (' + linksuggest_escape(item.title) + ')' : '';
+                }
 
-                return linksuggest_escape(item.fullns) + title;
             },
-
-            replace: function (item) { //returns what will be put to editor
-                const path = item.fullns.startsWith(':')? item.fullns : ':' + item.fullns;
-                $editor.data('linksuggest_off', 1);
-                setTimeout(function () {
-                    $editor.data('linksuggest_off', 0);
-                }, 500);
-
-                return '[[' + path + '#' + item.heading + appendSubtitle(item.title) + appendClosing();
-            },
-            cache:   false
-        }, { //media search
-            match:    /\{{2}([\w\-.:~]*)$/,
-            search:   function (term, callback) {
+            cache: false
+        },
+        { //media search
+            match: /\{{2}([\w\-.:~]*)$/,
+            search: function (term, callback) {
                 if ($editor.data('linksuggest_off') === 1) {
                     callback([]);
                     return;
@@ -252,8 +145,8 @@ jQuery(function () {
                 }
                 return '<img alt="' + alt + '" src="' + DOKU_BASE + 'lib/images/' + image + '"> ' + linksuggest_escape(value);
             },
-            index:    1,
-            replace:  function (item) { //returns what will be put to editor
+            index: 1,
+            replace: function (item) { //returns what will be put to editor
                 let id = item.id;
                 if (item.ns) { //prefix with already entered ns
                     id = item.ns + id;
@@ -273,8 +166,8 @@ jQuery(function () {
                 }
 
             },
-            cache:  false
-        }],{
+            cache: false
+        }], {
         appendTo: 'body',
         maxCount: 50,
         //header:'test',
