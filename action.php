@@ -1,6 +1,7 @@
 <?php
 
 use dokuwiki\Extension\Event;
+use dokuwiki\Logger;
 /**
  * DokuWiki Plugin linksuggest (Action Component)
  *
@@ -11,7 +12,7 @@ use dokuwiki\Extension\Event;
  */
 
 class action_plugin_linksuggest extends DokuWiki_Action_Plugin {
-
+    const MAX_RESULTS = 50;
     /**
      * Register the eventhandlers
      *
@@ -46,132 +47,115 @@ class action_plugin_linksuggest extends DokuWiki_Action_Plugin {
         //current page/ns
         $current_pageid = trim($INPUT->post->str('id')); //current id
         $current_ns = getNS($current_pageid);
-        $q = trim($INPUT->post->str('q')); //entered string
-        $originalQ = $INPUT->post->str('q');
-        //keep hashlink if exists
-        list($q, $hash) = array_pad(explode('#', $q, 2), 2, null);
+        $originalQ = $INPUT->post->str('q'); //entered string
+        $originalQ = trim($originalQ);
 
-        $has_hash = !($hash === null);
-        $entered_ns = getNS($q); //namespace of entered string
-        $trailing = ':'; //needs to be remembered, such that actual user input can be returned
-        if($entered_ns === false) {
-            //no namespace given (i.e. none : in $q)
-            // .xxx, ..xxx, ~xxx, if in front of ns, cleaned in $entered_page
-            if (substr($q, 0, 2) === '..') {
-                $entered_ns = '..';
-            } elseif (substr($q, 0, 1) === '.') {
-                $entered_ns = '.';
+        // split of hash part
+        list($entered_ns_q, $hash_search) = array_pad(explode('#', $originalQ, 2), 2, null);
+        $has_hash = !($hash_search === null);
+        $entered_ns = getNS($entered_ns_q); //namespace of entered string
+        $entered_orig_ns = $entered_ns === false ? '' : $entered_ns;
+        // convert $entered_ns relative links to absolute links
+        if((strpos($entered_ns_q, '.') !== false //relative link (., .:, .., ..:, .ns: etc, and :..:, :.: )
+            || substr($entered_ns_q, 0, 1) == '~')) {
+            
+            if($entered_ns === false) {
+                if (substr($entered_ns_q, 0, 2) === '..') {
+                    $entered_ns = '..';
+                } elseif (substr($entered_ns_q, 0, 1) === '.') {
+                    $entered_ns = '.';
 
-            } elseif (substr($q, 0, 1) === '~') {
-                $entered_ns = '~';
+                } elseif (substr($entered_ns_q, 0, 1) === '~') {
+                    $entered_ns = '~';
+                }
             }
-            $trailing = '';
-        }
-
-        $entered_page = cleanID(noNS($q)); //page part of entered string
-        if ($entered_ns === '') { // [[:xxx -> absolute link
-            $matchedPages = array_merge($this->search_pages('', $entered_page, $has_hash, true),$this->search_pages('', $entered_page, $has_hash, false));
-        } else if(strpos($originalQ, ':#') !== false) { // [[:some:namespaces:#word search, search in headings on same or level below
-            $matchedPages = $this->search_pages($entered_ns, '', true);
-            // also include own page. Hack to make heading search work
-            $matchedPages = array_merge($matchedPages, [['id' => $entered_ns]]);
-        } 
-        else if(substr($originalQ, 0, 1) === '#') { // [[#word search, global heading search
-            $matchedPages = $this->search_pages_upwards($current_ns, '', true, true);
-        } else if (strpos($q, '.') !== false //relative link (., .:, .., ..:, .ns: etc, and :..:, :.: )
-            || substr($entered_ns, 0, 1) == '~') { // ~, ~:,
+            $tilde_ns = (substr($entered_ns_q, 0, 1) === '~');
             //resolve the ns based on current id
-            $ns = $entered_ns;
-            if($entered_ns === '~') {
+            if($tilde_ns) {
                 //add a random page name, otherwise it ~ or ~: are interpret as ~:start
-                $ns .= 'uniqueadditionforlinksuggestplugin';
+                $entered_ns .= '~uniqueadditionforlinksuggestplugin'; // 34 characters long
             }
 
             if (class_exists('dokuwiki\File\PageResolver')) {
                 // Igor and later
                 $resolver = new dokuwiki\File\PageResolver($current_pageid);
-                $resolved_ns = $resolver->resolveId($ns);
+                $entered_ns = $resolver->resolveId($entered_ns);
             } else {
                 // Compatibility with older releases
-                $resolved_ns = $ns;
-                resolve_pageid(getNS($current_pageid), $resolved_ns, $exists);
-            }
-            if($entered_ns === '~') {
-                $resolved_ns = substr($resolved_ns, 0,-35); //remove : and unique string
+                resolve_pageid(getNS($current_pageid), $entered_ns, $exists);
             }
 
-            $matchedPages = $this->search_pages($resolved_ns, $entered_page, $has_hash);
-        } else if ($entered_ns === false && $current_ns) { // [[xxx while current page not in root-namespace
-            $matchedPages = array_merge(
-                            $this->search_pages_upwards($current_ns, $entered_page, true, true), 
-                            $this->search_pages_upwards($current_ns, $entered_page, true, false));
-        } else {
-            $matchedPages = array_merge(
-                            $this->search_pages($entered_ns, $entered_page, $has_hash, true),
-                            $this->search_pages($entered_ns, $entered_page, $has_hash, false));
+            if($tilde_ns) {
+                $entered_ns = substr($entered_ns, 0,-35); //remove : and unique string
+            }
         }
 
+        $entered_page = cleanID(noNS($entered_ns_q)); //page part of entered string
+        $matchedPages = [];
+        if ($entered_ns === '') { // [[:xxx -> absolute link
+            $matchedPages = $this->search_pages_both_limited('', $entered_page, $has_hash);
+        } else if($entered_ns === false) {
+            if(substr($originalQ, 0, 1) === '#') {  // [[#word search, global heading search
+                $matchedPages = $this->search_pages_upwards($current_ns, '', true, true);
+            } else { // [[xxx while current page not in root-namespace
+                // todo check if this should indeed return namespaces, or only pages
+                $matchedPages = $this->search_pages_upwards_both_limited($current_ns, $entered_page, false);
+            }
+        }else {
+            $matchedPages = $this->search_pages_both_limited($entered_ns, $entered_page, $has_hash);
+        }
+        
+        // TODO: when using e.g. :cos:sess#d, it will not give anything, because
+        // it does not count everything under "sessions" namespace, because it only searches for pages
+        // with sess, and only the namespace :sessions: is given
+        // So when doing a search with #, it should be less limited (only page search, but okay if search is inside part of namespaces)
+        if($has_hash) {
+            // when searching for a hash, also search in its own page
+            $matchedPages = array_merge($matchedPages, [['id' => $entered_ns, 'type' => 'f']]);
+        }
+
+        $matchedPages = $this->removeDuplicateSearchResults($matchedPages);
         $data_suggestions = [];
         $link = '';
-        if (substr($originalQ, 0, 1) === '#' || strpos($originalQ, ':#') !== false) {
+        if($has_hash) {
             // need to look at the TOC of every page...
-            foreach ($matchedPages as $matchedPage) {
-                $page = $matchedPage['id'];
+            foreach ($matchedPages as $entry) {
+                $page = $entry['id'];
                 $meta = p_get_metadata($page, false, METADATA_RENDER_USING_CACHE);
-
-                if (isset($meta['internal']['toc']) && isset($meta['description']['tableofcontents'])) {
+                if ($entry['type'] === 'f' && isset($meta['internal']['toc']) && isset($meta['description']['tableofcontents'])) {
                     $toc = $meta['description']['tableofcontents'];
                     Event::createAndTrigger('TPL_TOC_RENDER', $toc, null, false);
                     if (is_array($toc) && count($toc) !== 0) {
                         foreach ($toc as $t) { //loop through toc and compare
-                            if ($hash === '' || stripos($t['hid'], $hash) !== false) {
+                            if ($hash_search === '' || stripos($t['hid'], $hash_search) !== false) {
                                 $data_suggestions[] = [
+                                    'id' => noNS($page),
+                                    'enteredfullns' => $entered_ns,
+                                    'enteredorigns' => $entered_orig_ns,
                                     'title' => $t['title'],
                                     'fullns' => $page,
                                     'heading' => $t['hid'],
                                 ];
                             }
                         }
-                        $link = $q;
                     }
+                }
+                if(count($data_suggestions) > self::MAX_RESULTS) {
+                    break;
                 }
             }
         }
-        else if ($hash !== null && $matchedPages[0]['type'] === 'f') {
-            //if hash is given and a page was found
-            $page = $matchedPages[0]['id'];
-            $meta = p_get_metadata($page, false, METADATA_RENDER_USING_CACHE);
-
-            if (isset($meta['internal']['toc'])) {
-                $toc = $meta['description']['tableofcontents'];
-                Event::createAndTrigger('TPL_TOC_RENDER', $toc, null, false);
-                if (is_array($toc) && count($toc) !== 0) {
-                    foreach ($toc as $t) { //loop through toc and compare
-                        if ($hash === '' || stripos($t['hid'], $hash) !== false) {
-                            $data_suggestions[] = [
-                                'title' => $t['title'],
-                                'fullns' => $page,
-                                'heading' => $t['hid'],
-                            ];
-                        }
-                    }
-                    $link = $q;
-                }
-            }
-        } 
         else {
+            // pure namespace/page search 
             foreach ($matchedPages as $entry) {
                 //a page in rootns
-                if($current_ns !== '' && !$entry['ns'] && $entry['type'] === 'f') {
-                    $trailing = ':';
-                }
                 $data_suggestions[] = [
                     'id' => noNS($entry['id']),
                     //return literally ns what user has typed in before page name/namespace name that is suggested
-                    'ns' => $entered_ns . $trailing,
+                    'enteredfullns' => $entered_ns,
+                    'enteredorigns' => $entered_orig_ns,
                     'type' => $entry['type'], // d/f
                     'title' => $entry['title'] ?? '', //namespace have no title, for pages sometimes no title
-                    'rootns' => $entry['ns'] ? 0 : 1,
                     'fullns' => $entry['id'],
                 ];
             }
@@ -179,7 +163,7 @@ class action_plugin_linksuggest extends DokuWiki_Action_Plugin {
 
         echo json_encode([
             'data' => $data_suggestions,
-            'link' => $link
+            'link' => $entered_ns_q
         ]);
     }
 
@@ -279,6 +263,27 @@ class action_plugin_linksuggest extends DokuWiki_Action_Plugin {
     }
 
 
+    protected function search_pages_upwards_both_limited($ns, $id, $pagesonly) {
+        $strict = $this->search_pages_upwards($ns, $id, $pagesonly, true);
+        if(count($strict) > self::MAX_RESULTS) {
+            return $strict;
+        }else {
+        return array_merge(
+            $strict,
+            $this->search_pages_upwards($ns, $id, $pagesonly, false));
+        }
+    }
+    
+    protected function search_pages_both_limited($ns, $id, $pagesonly) {
+        $strict = $this->search_pages($ns, $id, $pagesonly, true);
+        if(count($strict) > self::MAX_RESULTS) {
+            return $strict;
+        }else {
+        return array_merge(
+            $strict,
+            $this->search_pages($ns, $id, $pagesonly, false));
+        }
+    }
     /**
      * List available pages, and eventually namespaces
      *
@@ -363,6 +368,9 @@ class action_plugin_linksuggest extends DokuWiki_Action_Plugin {
                 $searchResults = [];
                 search($searchResults, $conf['datadir'], 'search_universal', $opts, $nsd);
                 $results = array_merge($results, $searchResults);
+                if(count($results) > 2 * self::MAX_RESULTS) {
+                    break; // because there might be duplicates, break on two times the count
+                }
             }
             $namespace = $parentNamespace;
         }
