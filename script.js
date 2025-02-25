@@ -222,7 +222,6 @@ jQuery(function () {
                 callback(items);
             },
             template: function (item) { //dropdown list
-                console.log(item)
                 return linksuggest_escape(item.flag) + `  (${linksuggest_escape(item.explanation)})`;
             },
             index: 1,
