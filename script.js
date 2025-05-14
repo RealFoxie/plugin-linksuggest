@@ -47,7 +47,10 @@ const INCLUDE_PLUGIN_FLAGS = [
     ["rsort", "Reverse the sort order in namespace includes"],
     ["sort", "Do not reverse the sort order in namespace includes"],
     ["depth=", "The maximum depth of subnamespaces of which pages are included in namespace includes"],
-    ["exclude=", "Regular expression to exclude certain pages, matches on full page ID"]
+    ["exclude=", "Regular expression to exclude certain pages, matches on full page ID"],
+    ["beforeeach=", "Display an entity before/after each included page. The entity is printed outside the section/include environment, this is mainly for adding custom HTML code (when the text isn't recognized as entity it is directly displayed but escaped so you can't directly use HTML code here). "],
+    ["aftereach=", "Display an entity before/after each included page. The entity is printed outside the section/include environment, this is mainly for adding custom HTML code (when the text isn't recognized as entity it is directly displayed but escaped so you can't directly use HTML code here). "],
+    ["inline", "Don't close/open sections when including a page, useful when used inside another plugin. This flag should be used when the include syntax is used inside other syntax elements like lists or tables or inside other plugin syntax. "]
   ];
   
 
